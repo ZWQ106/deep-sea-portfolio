@@ -2,58 +2,185 @@
 "use client";
 import { Canvas, useFrame, useThree, extend } from "@react-three/fiber";
 import { EffectComposer, Bloom, Noise } from "@react-three/postprocessing";
-import { ScrollControls, useScroll, Float, Scroll, Environment, useGLTF, useAnimations, Loader, shaderMaterial, useProgress } from "@react-three/drei";
+import { ScrollControls, useScroll, Float, Scroll, Environment, useGLTF, useAnimations, Loader, shaderMaterial, useProgress, Cloud, Preload,useTexture } from "@react-three/drei";
 import { useRef, useMemo, useEffect,useState } from "react";
 import * as THREE from "three";
 import { motion } from "framer-motion";
+import { Water } from "three-stdlib";
 
+useTexture.preload("/waternormals.jpg");
 useGLTF.preload("/shark.glb"); 
 useGLTF.preload("/tuna.glb");
 useGLTF.preload("/jellyfish.glb");
 useGLTF.preload("/mantaray.glb");
 
-// --- 1. 摄像机控制器 ---
+// --- 0. 工具：检测手机端 ---
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+  return isMobile;
+}
+
+
+// --- 1. 摄像机控制器 (修正版) ---
 function CameraRig() {
   const scroll = useScroll();
   useFrame((state) => {
-    state.camera.position.y = -scroll.offset * 50;
+    // 🔧 关键修改：
+    // 初始高度改为 3.5 (低空视角，能看到水面在脚下)
+    // 滚动时下潜到 -50
+    state.camera.position.y = 3.5 - scroll.offset * 55;
+    
+    // 🔧 关键细节：
+    // 微微低头 (-0.15弧度)，这样你的视线是看着前下方海面的
+    // 这会让“水面”在视觉上占据屏幕底部，而不是看不见
+    state.camera.rotation.x = -0.15;
   });
   return null;
 }
 
-// --- 2. 背景组件 (5级变色) ---
+function SkyClouds() {
+  return (
+    // 🚨 关键修改：把高度从 20 降到 5
+    // 这样云就在地平线附近，你的视角能完美覆盖
+    <group position={[0, 15, -35]}> 
+      
+      {/* ☁️ 主云团 */}
+      <Cloud
+        position={[-10, 2, 0]} // 稍微抬高一点点，错落有致
+        opacity={1}            // 拉满不透明度，看得更清
+        speed={0.2}
+        width={20}
+        depth={5}
+        segments={20}
+        color="#ffffff"
+      />
+
+      {/* ☁️ 副云团 1 */}
+      <Cloud
+        position={[15, -2, -5]} // 稍微低一点
+        opacity={0.8}
+        speed={0.15}
+        width={15}
+        depth={3}
+        segments={15}
+        color="#eef4ff"
+      />
+
+       {/* ☁️ 副云团 2 */}
+       <Cloud
+        position={[0, 5, 5]}   // 稍微高一点
+        opacity={0.6}
+        speed={0.3}
+        width={10}
+        color="#ffffff"
+      />
+    </group>
+  );
+}
+
 function OceanBackground() {
   const scroll = useScroll();
-  const { gl, scene } = useThree();
+  const { gl, scene, camera } = useThree();
 
-  const c1 = useMemo(() => new THREE.Color("#115d9e"), []); 
-  const c2 = useMemo(() => new THREE.Color("#0d4b82"), []); 
-  const c3 = useMemo(() => new THREE.Color("#083359"), []); 
-  const c4 = useMemo(() => new THREE.Color("#031a2e"), []); 
-  const c5 = useMemo(() => new THREE.Color("#000000"), []); 
+  // 🎨 调色板升级
+  const colors = {
+    // 1. 天空：从沉闷的 #87CEEB 改成鲜亮的 #4facfe (加一点紫调的蓝，更洋气)
+    sky: new THREE.Color("#006994"),     
+    
+    // 2. 地平线：从灰白的 #E0F7FA 改成洁白的 #f0f9ff (让交界处更干净)
+    horizon: new THREE.Color("#4facfe"), 
+    
+    surface: new THREE.Color("#0077be"), 
+    deep: new THREE.Color("#000000")     
+  };
 
   useFrame(() => {
-    const r = scroll.offset;
+    const y = camera.position.y;
     const currentColor = new THREE.Color();
 
-    if (r < 0.25) {
-      currentColor.lerpColors(c1, c2, r * 4);
-      scene.fog = new THREE.Fog(currentColor, 10, 40);
-    } else if (r < 0.5) {
-      currentColor.lerpColors(c2, c3, (r - 0.25) * 4);
-      scene.fog = new THREE.Fog(currentColor, 8, 35);
-    } else if (r < 0.75) {
-      currentColor.lerpColors(c3, c4, (r - 0.5) * 4);
-      scene.fog = new THREE.Fog(currentColor, 6, 30);
+    if (y > 0) {
+      // === 天空层 ===
+      // 拉长渐变区间 (从 10 改到 20)，让头顶的蓝色不要太快压下来，保留更多呼吸感
+      const t = Math.min(y / 20, 1); 
+      currentColor.lerpColors(colors.horizon, colors.sky, t);
+      
+      // 🌫️ 推远雾气：
+      // 之前的 (20, 100) 太近了，导致远处看起来灰蒙蒙的。
+      // 改成 (40, 150)，让视野瞬间通透！
+      scene.fog = new THREE.Fog(currentColor, 40, 150);
     } else {
-      // 深渊层：确保最后一段是纯黑
-      currentColor.lerpColors(c4, c5, (r - 0.75) * 4);
-      scene.fog = new THREE.Fog(currentColor, 5, 20);
+      // === 水下层 (保持深海的压抑感) ===
+      const t = Math.min(Math.abs(y) / 50, 1);
+      currentColor.lerpColors(colors.surface, colors.deep, t);
+      scene.fog = new THREE.Fog(currentColor, 10, 60); 
     }
+
     gl.setClearColor(currentColor);
   });
   return null;
 }
+
+
+extend({ Water });
+
+export function WaterSurface() {
+  const ref = useRef();
+  const gl = useThree((state) => state.gl);
+
+  // 1. 加载纹理
+  const waterNormals = useMemo(
+    () =>
+      new THREE.TextureLoader().load("/waternormals.jpg", (texture) => {
+        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      }),
+    []
+  );
+
+  // 2. 关键修正：必须显式创建几何体！
+  // Water 对象需要几何体作为第一个参数
+  const geom = useMemo(() => new THREE.PlaneGeometry(500, 500), []);
+
+  // 3. 配置参数
+  const config = useMemo(
+    () => ({
+      textureWidth: 512,
+      textureHeight: 512,
+      waterNormals,
+      sunDirection: new THREE.Vector3(),
+      sunColor: 0xffffff,
+      waterColor: 0x001e0f,
+      distortionScale: 3.7,
+      fog: false,
+      format: gl.encoding,
+    }),
+    [waterNormals, gl.encoding]
+  );
+
+  useFrame((state, delta) => {
+    if (ref.current) {
+      // 让水动起来
+      ref.current.material.uniforms["time"].value += delta * 0.5;
+    }
+  });
+
+  // 4. 渲染 Water 对象本身
+  // args={[geom, config]} -> 对应 new Water(geometry, options)
+  return (
+    <water
+      ref={ref}
+      args={[geom, config]}
+      rotation-x={-Math.PI / 2}
+      position-y={-0.1} // 稍微放低一点点
+    />
+  );
+}
+
 
 const BeamMaterial = shaderMaterial(
   {
@@ -158,49 +285,90 @@ function SunBeams({ count = 12 }) {
     </group>
   );
 }
-// --- 3. 气泡组件 ---
-function Bubbles({ count = 100 }) {
+
+
+function Bubbles({ count = 200 }) {
   const mesh = useRef();
+  
   const particles = useMemo(() => {
     const temp = [];
     for (let i = 0; i < count; i++) {
       const t = Math.random() * 100;
-      const factor = 20 + Math.random() * 100;
-      const speed = 0.01 + Math.random() / 200;
-      const xFactor = -5 + Math.random() * 10;
-      const yFactor = -5 + Math.random() * 10;
-      const zFactor = -10 + Math.random() * 20; 
-      temp.push({ t, factor, speed, xFactor, yFactor, zFactor, mx: 0, my: 0 });
+      const speed = 0.05 + Math.random() * 0.1;
+      const xFactor = -25 + Math.random() * 50;
+      const zFactor = -25 + Math.random() * 50;
+      const yFactor = -25 + Math.random() * 60; 
+      const baseScale = 0.5 + Math.random() * 1.5;
+      temp.push({ t, speed, xFactor, yFactor, zFactor, baseScale });
     }
     return temp;
   }, [count]);
 
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+
   useFrame((state) => {
+    if (!mesh.current) return;
+
     particles.forEach((particle, i) => {
-      let { t, factor, speed, xFactor, yFactor, zFactor } = particle;
-      t = particle.t += speed / 2;
-      const s = Math.cos(t) * 0.5 + 0.5; 
-      const dummy = new THREE.Object3D();
-      const deepY = (particle.my % 60) - 55; 
-      
+      // --- 运动逻辑 ---
+      particle.yFactor += particle.speed;
+      particle.t += 0.02;
+      const wobbleX = Math.sin(particle.t) * 0.5;
+      const wobbleZ = Math.cos(particle.t * 0.8) * 0.5;
+
+      if (particle.yFactor > -2) {
+         particle.yFactor = -70 - Math.random() * 20; 
+         particle.xFactor = -25 + Math.random() * 50;
+         particle.zFactor = -25 + Math.random() * 50;
+      }
+
       dummy.position.set(
-        (particle.mx += (state.mouse.x * 5 - particle.mx) * 0.02) + xFactor + Math.cos((t / 10) * factor) + (Math.sin(t * 1) * factor) / 10,
-        (particle.my += (state.mouse.y * 5 - particle.my) * 0.02) + yFactor + Math.sin((t / 10) * factor) + (Math.cos(t * 2) * factor) / 10 - (state.camera.position.y),
-        zFactor + Math.cos((t / 10) * factor) + (Math.sin(t * 3) * factor) / 10
+        particle.xFactor + wobbleX,
+        particle.yFactor,
+        particle.zFactor + wobbleZ
       );
-      dummy.scale.set(s, s, s);
+
+      // --- 形状逻辑: 微微压扁 (保留这个细节，很真实) ---
+      const depthScale = THREE.MathUtils.mapLinear(particle.yFactor, -60, -2, 0.5, 1.5);
+      const s = particle.baseScale * depthScale;
+      dummy.scale.set(s, s * 0.85, s); 
+      
       dummy.updateMatrix();
       mesh.current.setMatrixAt(i, dummy.matrix);
     });
+
     mesh.current.instanceMatrix.needsUpdate = true;
   });
+
   return (
     <instancedMesh ref={mesh} args={[null, null, count]}>
-      <sphereGeometry args={[0.05, 16, 16]} />
-      <meshStandardMaterial color="#88ccff" roughness={0.1} transparent opacity={0.4} />
+      {/* 几何体保持高精度 */}
+      <sphereGeometry args={[0.1, 32, 32]} />
+      
+      {/* 🌟 材质：浅海透亮风格 (Crystal Clear) */}
+      <meshPhysicalMaterial
+        color="#ffffff"          // 纯白
+        emissive="#ffffff"       // 自发光：白色
+        emissiveIntensity={0.2}  // 🚨 关键：微微发光 (0.2)，防止在深海变全黑
+        
+        roughness={0}            // 绝对光滑
+        metalness={0.0}          // 🚨 归零！去掉金属黑感
+        
+        transparent={true}
+        opacity={1}              // 不透明度设为 1，完全靠 transmission 控制
+        
+        transmission={0.95}      // 95% 透光，保留 5% 的白色表面
+        ior={1.45}               // 玻璃/水晶的折射率，让它亮晶晶
+        thickness={0.05}         // 🚨 极薄：像肥皂泡一样的厚度，消除“实心球”感
+        
+        clearcoat={1}            // 清漆层，增加高光
+        attenuationColor="#ffffff" // 内部光线颜色：白
+        attenuationDistance={0.5}  // 光线穿透距离
+      />
     </instancedMesh>
   );
 }
+
 
 // --- 4. 普通鱼组件 (锦鲤、鲨鱼、魔鬼鱼) ---
 function SmartFish({ modelUrl, depthY, scale = 1, speed = 1, rangeX = 10, rangeZ = 5, frequency = 0.5, rotationOffset = 0 }) {
@@ -248,7 +416,7 @@ function SmartFish({ modelUrl, depthY, scale = 1, speed = 1, rangeX = 10, rangeZ
 
 
 //鱼群
-function School({ count = 10 }) { 
+function School({ count = 10, depthY = -20 }) { 
   const mesh = useRef();
   const dummy = useMemo(() => new THREE.Object3D(), []);
 
@@ -323,14 +491,16 @@ function School({ count = 10 }) {
   if (!fishGeometry) return null;
 
   return (
-    <instancedMesh ref={mesh} args={[fishGeometry, null, count]}>
-      <meshStandardMaterial 
-        color="#aaccff" 
-        emissive="#001133"
-        roughness={0.1} 
-        metalness={0.9} 
-      />
-    </instancedMesh>
+    <group position={[0, depthY, 0]}>
+      <instancedMesh ref={mesh} args={[fishGeometry, null, count]}>
+        <meshStandardMaterial 
+          color="#aaccff" 
+          emissive="#001133"
+          roughness={0.1} 
+          metalness={0.9} 
+        />
+      </instancedMesh>
+    </group>
   );
 }
 
@@ -637,15 +807,45 @@ function DOMContent() {
   );
 }
 
-// 加载屏组件 ---
 function LoadingScreen() {
-  const { progress } = useProgress();
+  const { progress, active } = useProgress();
   const [finished, setFinished] = useState(false);
+  const [logs, setLogs] = useState([
+    "INITIALIZING SYSTEM...",
+    "CONNECTING TO SATELLITE...",
+  ]);
 
+  // 📝 模拟系统日志：让用户觉得你的网站在进行很厉害的计算
   useEffect(() => {
-    // 加载到 100% 后，延迟 500ms 再消失，体验更平滑
+    if (finished) return;
+    
+    const fakeLogs = [
+      "CALIBRATING PRESSURE SENSORS...",
+      "LOADING BATHYMETRIC DATA...",
+      "SYNCHRONIZING HYDROPHONES...",
+      "DETECTING MARINE LIFEFORMS...",
+      "ANALYZING WATER SALINITY...",
+      "OPTIMIZING SHADER CACHE...",
+      "ESTABLISHING NEURAL LINK...",
+    ];
+
+    const interval = setInterval(() => {
+      // 随机挑一个日志加进去
+      const randomLog = fakeLogs[Math.floor(Math.random() * fakeLogs.length)];
+      setLogs((prev) => [...prev.slice(-4), `> ${randomLog}`]); // 只保留最后5行
+    }, 400);
+
+    return () => clearInterval(interval);
+  }, [finished]);
+
+  // ⏳ 只有当进度 100% 且至少过了一小会儿，才允许结束
+  useEffect(() => {
     if (progress === 100) {
-      const timer = setTimeout(() => setFinished(true), 500);
+      // 强制多等 1 秒，让 GPU 有时间喘口气 (Warm up)
+      const timer = setTimeout(() => {
+        setLogs((prev) => [...prev, "> SYSTEM READY.", "> DIVING IN..."]);
+        setTimeout(() => setFinished(true), 1000); 
+      }, 1000);
       return () => clearTimeout(timer);
     }
   }, [progress]);
@@ -660,50 +860,85 @@ function LoadingScreen() {
         left: 0,
         width: "100vw",
         height: "100vh",
-        background: "#000000",
-        zIndex: 99999, // 保证在最顶层
+        background: "#000510", // 深海黑
+        zIndex: 99999,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        color: "white",
+        color: "#66ccff",
         fontFamily: "'Courier New', monospace",
-        transition: "opacity 0.8s ease-out", // 淡出动画
-        opacity: progress === 100 ? 0 : 1,   // 完成变透明
-        pointerEvents: progress === 100 ? "none" : "auto", // 穿透鼠标
+        transition: "opacity 1.5s ease-out", // 消失得慢一点，更优雅
+        opacity: finished ? 0 : 1,
+        pointerEvents: finished ? "none" : "auto",
       }}
     >
-      {/* 进度条 */}
-      <div style={{ width: "300px", height: "2px", background: "#333", marginBottom: "20px", position: 'relative' }}>
+      {/* 装饰：旋转的雷达圈 */}
+      <div style={{
+        width: '80px', height: '80px', 
+        border: '2px solid rgba(102, 204, 255, 0.3)',
+        borderTop: '2px solid #66ccff',
+        borderRadius: '50%',
+        animation: 'spin 1s linear infinite',
+        marginBottom: '40px'
+      }}>
+        <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+      </div>
+
+      {/* 进度条外框 */}
+      <div style={{ 
+        width: "300px", 
+        height: "4px", 
+        background: "rgba(102, 204, 255, 0.2)", 
+        marginBottom: "15px", 
+        position: 'relative',
+        borderRadius: '2px'
+      }}>
+        {/* 进度条本体 */}
         <div
           style={{
             position: 'absolute',
-            left: 0,
-            top: 0,
-            height: "100%",
+            left: 0, top: 0, height: "100%",
             width: `${progress}%`,
             background: "#66ccff",
-            boxShadow: "0 0 10px #66ccff",
-            transition: "width 0.2s ease",
+            boxShadow: "0 0 15px #66ccff",
+            transition: "width 0.3s ease",
           }}
         />
       </div>
 
-      {/* 文字 */}
-      <div style={{ fontSize: "1.2rem", fontWeight: "bold", letterSpacing: "2px" }}>
-        SYSTEM INITIALIZING... {Math.round(progress)}%
+      {/* 核心改动：百分比大字 */}
+      <div style={{ fontSize: "3rem", fontWeight: "900", letterSpacing: "5px", marginBottom: "30px", textShadow: "0 0 20px #66ccff" }}>
+        {Math.round(progress)}%
       </div>
 
-      {/* 底部小字提示 */}
-      <div style={{ position: "absolute", bottom: "50px", textAlign: "center", opacity: 0.5, fontSize: "0.8rem" }}>
-         <p>RECOMMENDED FOR DESKTOP & LARGE DISPLAYS</p>
+      {/* 核心改动：滚动日志区域 */}
+      <div style={{ 
+        height: '120px', 
+        display: 'flex', 
+        flexDirection: 'column', 
+        justifyContent: 'flex-end', 
+        opacity: 0.7,
+        fontSize: '0.8rem',
+        textAlign: 'left',
+        width: '300px'
+      }}>
+        {logs.map((log, i) => (
+          <div key={i} style={{ marginBottom: '5px' }}>{log}</div>
+        ))}
       </div>
+      
     </div>
   );
 }
 
 // --- 主程序入口 ---
 export default function DeepSeaPage() {
+  const isMobile = useIsMobile(); // 1. 获取手机状态
+
+  // 2. 根据设备调整摄像机 Z 轴 (手机退后一点，电脑近一点)
+  const cameraZ = isMobile ? 18 : 10;
+
   return (
     <div style={{ width: "100vw", height: "100vh", background: 'black', position: 'relative' }}>
       <LoadingScreen />
@@ -738,33 +973,75 @@ export default function DeepSeaPage() {
           <div id="hud-depth-bar" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '0%', background: '#66ccff', boxShadow: '0 0 15px #66ccff' }} />
         </div>
       </div>
-      <Canvas camera={{ position: [0, 0, 10], fov: 60 }}>
-        <Environment preset="city" /> 
-        <ambientLight intensity={0.6} />
-        <directionalLight position={[10, 10, 5]} intensity={1.5} />
+
+
+      <Canvas camera={{ position: [0, 0, cameraZ], fov: 60 }}>
+        {/* ⚠️ 关键：增强太阳光！
+          这个光的位置和方向直接决定了水面反光的效果。
+          把它放在侧后方 (5, 10, -10) 会产生非常漂亮的效果。
+        */}
+        {/* ☀️ 1. 太阳光：增强强度，位置稍微调高，制造明亮的主光源 */}
+        <directionalLight 
+          position={[10, 15, 10]} // 位置高一点，从右上方打下来
+          intensity={2.5}         // 强度提高到 2.5 或 3
+          color="#ffffff"         // 纯白阳光
+          castShadow              // 开启投影，增加立体感
+        />
+
+        {/* ☁️ 2. 环境光：关键！调亮，并带一点天空蓝，填充阴影 */}
+        {/* 原来可能是 intensity={0.5}，太暗了 */}
+        <ambientLight 
+          intensity={0.8}         // 提高到 0.8，让暗部变亮
+          color="#eef4ff"         // 微微带蓝的白色环境光，模拟蓝天漫射
+        />
+
+        {/* 💡 额外技巧：加一个半球光 (HemisphereLight) 模拟天光地光 */}
+        {/* 天空是亮的蓝白色，地面是稍微暗一点的海洋反射色 */}
+        <hemisphereLight 
+          skyColor="#ffffff"      // 天顶颜色
+          groundColor="#0077be"   // 地面/海面反射颜色
+          intensity={0.6}         // 强度
+        />
         
-        <ScrollControls pages={5} damping={0.3}>
-          <DepthSyncer />
+        {/* 雾气：颜色要配合天空 */}
+        <fog attach="fog" args={['#87CEEB', 10, 100]} />
+
+        <ScrollControls pages={6} damping={0.3}>
           <CameraRig />
           <OceanBackground />
-          <SunBeams count={12} />
-          <Bubbles count={400} />
-          
-          <School count={20} depthY={-6} radius={10} />
-          
-          {/* 2. 鲨鱼 (-25m) */}
-          <SmartFish modelUrl="/shark.glb" depthY={-20} scale={1.5} speed={1.2} frequency={0.3} rangeX={18} rangeZ={8} rotationOffset={0} />
+          <SkyClouds />
 
-          {/* 3. Manta Ray (-35m) */}
-          <SmartFish modelUrl="/mantaray.glb" depthY={-35} scale={0.02} speed={0.6} frequency={0.15} rangeX={22} rangeZ={12} rotationOffset={0} />
-
-          {/* 4. 水母 (-45m)*/}
+          {/* ▼▼▼ 使用全新的水面组件 ▼▼▼ */}
+          <WaterSurface />
+          <SunBeams count={isMobile ? 8 : 12} /> {/* 手机上减少光柱数量 */}
+          <Bubbles count={isMobile ? 200 : 400} />
           
+          {/* 鱼群位置微调：保持在水面以下 (Y < 0) */}
+          <School count={isMobile ? 15 : 25} depthY={-15} radius={isMobile ? 5 : 10} />
+          
+          <SmartFish 
+            modelUrl="/shark.glb" 
+            depthY={-20} 
+            scale={isMobile ? 1.2 : 1.5} 
+            rangeX={isMobile ? 10 : 18} // 手机上游动范围小一点
+            rangeZ={8} 
+            speed={1.2} 
+          />
+
+          <SmartFish 
+            modelUrl="/mantaray.glb" 
+            depthY={-35} 
+            scale={isMobile ? 0.015 : 0.02} 
+            rangeX={isMobile ? 12 : 22} 
+            rangeZ={12} 
+            speed={0.6} 
+          />
+
           <Jellyfish 
             modelUrl="/jellyfish.glb" 
             depthY={-45} 
             scale={1}      
-            color="#00ffff" // 赛博青
+            color="#00ffff"
           />
           
           <Scroll html style={{ width: '100%' }}>
@@ -772,14 +1049,12 @@ export default function DeepSeaPage() {
           </Scroll>
           
         </ScrollControls>
+        
         <EffectComposer>
-          <Bloom 
-            luminanceThreshold={0.9} // 只让极亮的部分发光
-            luminanceSmoothing={0.9} 
-            intensity={0.05}         
-          />
+          <Bloom luminanceThreshold={0.9} luminanceSmoothing={0.9} intensity={0.05} />
           <Noise opacity={0.03} />
         </EffectComposer>
+        <Preload all />
       </Canvas>
 
       <Loader 

@@ -14,7 +14,14 @@ const FadeIn = ({ children, delay = 0 }) => (
 );
 
 const Section = ({ children, style }) => (
-  <section style={{ height: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '10vw', ...style }}>
+  <section style={{ 
+    minHeight: '100vh',  
+    display: 'flex', 
+    flexDirection: 'column', 
+    justifyContent: 'center', 
+    padding: '10vw', 
+    ...style 
+  }}>
     {children}
   </section>
 );
@@ -22,6 +29,8 @@ const Section = ({ children, style }) => (
 export default function DOMContent() {
   return (
     <div style={{ width: '100%', color: 'white', fontFamily: "'Inter', sans-serif" }}>
+      
+      {/* 1. Header */}
       <Section style={{ alignItems: 'flex-start' }}>
         <FadeIn>
           <h1 style={{ fontSize: '6vw', fontWeight: '800', lineHeight: '1', margin: 0 }}>
@@ -35,6 +44,7 @@ export default function DOMContent() {
         </FadeIn>
       </Section>
 
+      {/* 2. About */}
       <Section style={{ alignItems: 'flex-end', textAlign: 'right' }}>
         <FadeIn>
           <div style={{ background: 'rgba(255, 255, 255, 0.05)', backdropFilter: 'blur(10px)', padding: '40px', borderRadius: '20px', border: '1px solid rgba(255, 255, 255, 0.1)', maxWidth: '600px', marginLeft: 'auto' }}>
@@ -46,6 +56,7 @@ export default function DOMContent() {
         </FadeIn>
       </Section>
 
+      {/* 3. Projects */}
       <Section style={{ alignItems: 'center' }}>
         <FadeIn>
           <h2 style={{ fontSize: '3rem', marginBottom: '60px', textShadow: '0 0 30px #66ccff50' }}>Current Work</h2>
@@ -74,9 +85,10 @@ export default function DOMContent() {
             <a href="https://github.com/ZWQ106" target="_blank" style={{ color: 'white', textDecoration: 'none', borderBottom: '1px solid white' }}>GitHub</a>
           </div>
         </FadeIn>
-        <FadeIn delay={0.4}>
+        
+        
           <p style={{ marginTop: '100px', opacity: 0.5, fontSize: '0.8rem' }}>© 2026 Wenqian Zhang. All rights reserved.</p>
-        </FadeIn>
+        
       </Section>
     </div>
   );

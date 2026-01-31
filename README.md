@@ -1,8 +1,5 @@
 # Wenqian Zhang | Deep sea Portfolio🌊
 
-![Portfolio Preview](icon.png) 
-> **"Giving intelligence a physical form."**
-
 Welcome to my digital portfolio. This project is a conceptual deep-dive into my work in **Computer Engineering**, **Robotics**, and **Embodied AI**, visualized through an immersive web experience.
 
 ## 🛠️ Tech Stack

@@ -78,7 +78,6 @@ export default function DeepSeaPage() {
           <Noise opacity={0.03} />
         </EffectComposer>
 
-        {/* 👇 5. 加回 Preload，保证资源预加载 */}
         <Preload all />
       </Canvas>
     </div>
